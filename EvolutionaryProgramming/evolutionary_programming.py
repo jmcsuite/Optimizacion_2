@@ -1,7 +1,7 @@
 import numpy as np
 
 class EvolutionaryProgramming:
-    def __init__(self, func, bounds, args=(), popsize=30):
+    def __init__(self, func, bounds, args=(), popsize=30, rng = np.random.default_rng(16072001)):
         self.func = func
         self.bounds = np.array(bounds)
         self.args = args
@@ -9,7 +9,9 @@ class EvolutionaryProgramming:
         self.population = None
         self.sigmas = None
         self.fitness = None
-        
+        self.rng = rng
+        self.nfev = 0
+       
     def init_population(self):
         nvar = len(self.bounds)
         self.population = np.zeros((self.popsize, nvar))
@@ -19,61 +21,57 @@ class EvolutionaryProgramming:
         for v in range(nvar):
             vmin, vmax = self.bounds[v, 0], self.bounds[v, 1]
             vmut = np.abs(vmax - vmin) / 10
-            self.population[:,v] = np.random.uniform(vmin, vmax, (self.popsize))
-            self.sigmas[:, v] = np.abs(np.random.normal(loc=0, scale=vmut, size=(self.popsize))) + 0.001
-            
-        for i in range(self.popsize):
-            P = self.population[i,:]
-            self.fitness[i] = self.func(P, *self.args)
+            self.population[:,v] = self.rng.uniform(vmin, vmax, (self.popsize))
+            self.sigmas[:, v] = np.abs(self.rng.normal(loc=0, scale=vmut, size=(self.popsize))) + 0.001
+        
+        self.fitness = self.objective_func(self.population, *self.args)
+        order = np.argsort(self.fitness)
+        self.fitness = self.fitness[order]
+        self.population = self.population[order]
+
+    def objective_func(self, *args):
+        self.nfev += 1
+        return self.func(*args)
     
     def mutation(self, alpha=0.2, epsilon=0.001):
-        print('in')
         new_population = self.population.copy()
         new_sigmas = self.sigmas.copy()
         nvar = len(self.bounds)
         for v in range(nvar):
-            print(new_population[:, v])
-            new_sigmas[:, v] = np.maximum(epsilon, new_sigmas[:, v] * (1 + np.random.normal(loc=0, scale=alpha)))
-            new_population[:, v] += np.random.normal(loc=0, scale=new_sigmas[:, v])
-                                                     
+            new_sigmas[:, v] = np.maximum(epsilon, new_sigmas[:, v] * (1 + self.rng.normal(loc=0, scale=alpha)))
+            
+            new_population[:, v] += self.rng.normal(loc=0, scale=new_sigmas[:, v])           
+            new_population[:, v] = np.maximum(np.ones(self.population.shape[0])*self.bounds[v][0], new_population[:, v])   
+            new_population[:, v] = np.minimum(np.ones(self.population.shape[0])*self.bounds[v][1], new_population[:, v])          
         return new_population
                                                      
                                                       
     def survivor_selection(self, new_population):
-        print('survivor')
-        two_populations = np.append(self.population, new_population, axis=0)
-        print(two_populations)
-        two_fitness = np.zeros(two_populations.shape)
-        
-        for i in range(self.popsize * 2):
-            P = two_populations[i,:]
-            two_fitness[i] = self.func(P, *self.args)
-            
-        order = np.argsort(two_fitness)[:self.popsize]
-        self.population = two_populations[order]
-        self.fitness = two_fitness[order]
+        two_populations = np.concatenate((self.population, new_population), axis=0)
+        two_fitness = self.objective_func(two_populations, *self.args)
+        order = np.argsort(two_fitness)
+        self.population = two_populations[order[:self.population.shape[0]]]
+        self.fitness = two_fitness[order[:self.population.shape[0]]]
         
     
-    def solve(self, max_it=300):
+    def solve(self, max_it=1000):
         self.init_population()
-        elite = self.population[np.argmin(self.fitness)].copy()
-        elite_fx = np.min(self.fitness)
-        
+        elite_fx = self.fitness[0]
+        elite_sol = self.population[0]
         nit = 0
         while nit < max_it and elite_fx > 0:
             new_population = self.mutation() 
             self.survivor_selection(new_population)
-                                                     
-            if(np.min(self.fitness) < elite_fx):
-                elite = population[np.argmin(self.fitness)].copy()
-                elite_fx = np.min(self.fitness)       
+            elite_fx = self.fitness[0]
+            elite_sol = self.population[0]     
             nit += 1
-                                                     
-        # P: solution
+
+        ans = {'x': elite_sol, 'nit': nit, 'fun': elite_fx, 'nfev': 0}                                
+        # x: solution
         # nit: generation count
         # fun: fitness of the fittest
         # nfev: call count to objective function
-        return elite, nit, elite_fx, nfev
+        return ans
 
 def evolutionary_programming(func, bounds, args=(), popsize=30):
     print('Evolutionary Programming')

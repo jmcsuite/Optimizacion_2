@@ -1,3 +1,4 @@
+from cmath import inf
 import numpy as np
 
 class ParticleOptimization:
@@ -7,7 +8,15 @@ class ParticleOptimization:
         self.b_ub = np.array(b_ub)
         self.b_eq = np.array(b_eq)
         self.func = func
-        self.bounds = np.array(bounds)
+        self.bounds = np.array(bounds).astype(np.float64)
+        for i,a in enumerate(self.bounds[:,1]):
+            if(np.isnan(a)):
+                self.bounds[i,1] = 100.0
+
+        for i,a in enumerate(self.bounds[:,0]):
+            if(np.isnan(a)):
+                self.bounds[i,0] = -100.0
+        #print(self.bounds)
         self.args = args
         self.popsize = popsize
         self.population = None
@@ -24,22 +33,25 @@ class ParticleOptimization:
         x = args[0]
         a1 = self.bounds[:,0]-x
         a2 = x-self.bounds[:,1]
-
-        a1 *= 10
-        a2 *= 10
-
+        a1 = np.exp(a1+7)
+        
+        a1 = np.sum(a1)
+        a2 = np.exp(a2+7)
+        a2 = np.sum(a2)
+        
         a3 = 0
         if(self.A_ub.shape != ()):
             matrixIn = self.A_ub@x
-            a3 = np.sum(matrixIn - self.b_ub)
-            
-        a3 *= 10
+            a3 = matrixIn - self.b_ub
+            a3 = np.sum(np.exp(a3+7))
+        #print(a1, a2, a3, x)
 
         a4 = 0
         if(self.A_eq.shape != ()):
             matrixIn = self.A_eq@x
-            a4 = np.sum(np.abs(matrixIn-self.b_eq))
-        a4 *= 10
+            a4 = np.abs(matrixIn-self.b_eq)
+            a4 = np.sum(np.exp(a4+7))
+        
 
         m = self.func(*args)
         return m + a1 + a2 + a3 + a4
@@ -48,6 +60,8 @@ class ParticleOptimization:
     def init_population(self):
         nvar = len(self.bounds)
         self.population = np.zeros((self.popsize, nvar))
+        
+        self.velocity = np.ones((self.popsize, nvar))
         
         for v in range(nvar):
             vmin, vmax = self.bounds[v, 0], self.bounds[v, 1]
@@ -84,29 +98,34 @@ class ParticleOptimization:
 
         elite_sol = self.bestPosition
         elite_fx = self.objective_func(elite_sol, *self.args)
-        w, c1, c2 = 0.9
+        #print(self.objective_func(elite_sol, *self.args), elite_fx, "pp")
+        w, c1, c2 = 0.9, 0.9, 0.9
         current_g = 0
         while current_g < max_it:
             w *= .99
             c1 *= .99
             c2 *= .99
             for idx in range(self.popsize):
-                pi, vi = self.mutation(self.bestPositions[idx], self.population[idx], self.velocity[idx], w, c1, c2)
+                pi , vi= self.mutation(self.bestPositions[idx], self.population[idx], self.velocity[idx], w, c1, c2)
                 #ui = self.crossover(self.population[idx], vi, Cr)
                 fui = self.objective_func(pi, *self.args)
+                self.population[idx] = pi
+                self.velocity[idx] = vi
                 if fui < self.fitness[idx]:
                     self.fitness[idx] = fui 
-                    self.bestPositions[idx] = fui
+                    self.bestPositions[idx] = pi
                 if self.fitness[idx] < elite_fx:
                     elite_fx = self.fitness[idx]
                     elite_sol = self.population[idx]
                     self.bestPosition = elite_sol
             current_g += 1
         
+        #print(self.objective_func(elite_sol, *self.args), elite_fx)
+
         return {'x': elite_sol, 'nit': current_g, 'fun': elite_fx, 'nfev': self.nfev}
     
-def particle_optimization(func, bounds, args, A_ub, b_ub, A_eq, b_eq, popsize=30, max_it=3000, Cr=0.5):
-    de = particle_optimization(func, bounds, args, A_ub, b_ub, A_eq, b_eq, popsize)
-    return de.solve(max_it, Cr)
+def particle_optimization(func, bounds, args, A_ub, b_ub, A_eq, b_eq, popsize=30, max_it=200):
+    po = ParticleOptimization(func, bounds, args, A_ub, b_ub, A_eq, b_eq, popsize)
+    return po.solve(max_it)
         
        
